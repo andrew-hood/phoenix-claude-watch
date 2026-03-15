@@ -40,6 +40,10 @@
       {
         "from": "scripts",
         "to": "scripts"
+      },
+      {
+        "from": "resources",
+        "to": "resources"
       }
     ]
   }

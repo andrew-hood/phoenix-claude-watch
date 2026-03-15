@@ -19,6 +19,9 @@ const isPackaged = app.isPackaged;
 const COMMANDS_DIR = isPackaged
   ? path.join(process.resourcesPath, "commands")
   : path.join(__dirname, "..", "commands");
+const RESOURCES_DIR = isPackaged
+  ? process.resourcesPath
+  : path.join(__dirname, "..");
 
 // Model alias map
 const MODEL_ALIASES = {
@@ -111,7 +114,7 @@ function createWindow() {
     width: 1600,
     height: 900,
     title: "Claude Observe",
-    icon: path.join(__dirname, '..', 'resources', 'icon.png'),
+    icon: path.join(RESOURCES_DIR, 'resources', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -121,7 +124,7 @@ function createWindow() {
   });
 
   if (process.platform === 'darwin') {
-    app.dock.setIcon(path.join(__dirname, '..', 'resources', 'icon.png'));
+    app.dock.setIcon(path.join(RESOURCES_DIR, 'resources', 'icon.png'));
   }
 
   // Inject Authorization header for Phoenix requests

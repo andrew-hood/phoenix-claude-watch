@@ -1,37 +1,36 @@
-# Phoenix Claude Shell
+# Claude Observe
 
-An Electron wrapper that overlays Claude Code integration onto the Phoenix LiveDashboard — without modifying Phoenix at all.
+Electron app that wraps Phoenix LiveDashboard in a split-pane layout alongside a Claude Code sidebar panel. Phoenix on the left, Claude on the right — with context-aware commands, streaming output, and analysis history. No Phoenix modification required.
+
+![Claude Observe — batch analysis](screenshot-analysis.png)
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────┐
-│           Electron App                   │
-│                                          │
-│  ┌────────────────────────────────────┐  │
-│  │    BrowserWindow (Renderer)        │  │
-│  │    Phoenix UI @ localhost:6006     │  │
-│  │    + Injected overlay (⌘K palette) │  │
-│  └──────────┬─────────────────────────┘  │
-│             │ IPC via contextBridge       │
-│  ┌──────────▼─────────────────────────┐  │
-│  │    Main Process (Node.js)          │  │
-│  │    - Loads commands from /commands  │  │
-│  │    - Spawns `claude --print`       │  │
-│  │    - Streams output back via IPC   │  │
-│  └────────────────────────────────────┘  │
-└──────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────┐
+│                  Electron App                       │
+│                                                     │
+│  ┌─────────────────────┬───────────────────────┐    │
+│  │  Phoenix iframe     │   Claude Panel        │    │
+│  │  (LiveDashboard)    │   ┌─────────────────┐ │    │
+│  │                     │   │ Observe tab     │ │    │
+│  │  URL polled for     │   │ History tab     │ │    │
+│  │  context detection  │   │ Schedules tab   │ │    │
+│  │  (project/trace/    │   └─────────────────┘ │    │
+│  │   span/session)     │   Streaming output    │    │
+│  │                     │   + analysis store    │    │
+│  └────────┬────────────┴───────────┬───────────┘    │
+│           │     IPC via preload    │                │
+│  ┌────────▼────────────────────────▼───────────┐    │
+│  │         Main Process (Node.js)              │    │
+│  │  - Loads commands from /commands/*.json      │    │
+│  │  - Spawns `claude -p --output-format         │    │
+│  │    stream-json --verbose`                    │    │
+│  │  - Streams NDJSON back via IPC              │    │
+│  │  - Persists config + analyses to disk       │    │
+│  └─────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────┘
 ```
-
-### How it works (Chrome Extension mental model)
-
-| Chrome Extension | Electron Equivalent (this project) |
-|---|---|
-| Content Script | `src/injections/phoenix-overlay.js` |
-| Background Script | `src/main.js` (main process) |
-| `chrome.runtime.sendMessage` | `ipcRenderer.invoke` via preload |
-| Popup / Sidebar | Command palette (⌘K) |
-| Manifest permissions | `webPreferences` in BrowserWindow |
 
 ## Quick Start
 
@@ -51,25 +50,34 @@ npm install
 ### Run
 
 ```bash
-# Start Phoenix first (in your project)
-# Then:
+# Start Phoenix first, then:
 npm start
 
 # With DevTools:
 npm run dev
 ```
 
-### Usage
+## Usage
 
-1. The app opens Phoenix in an Electron window
-2. Look for the ⚡ button in the bottom-right corner
-   - Green dot = Claude CLI detected
-   - Red dot = Claude CLI not found
-3. Click the button or press **⌘K** (Ctrl+K on Linux) to open the command palette
-4. Select a command to run
-5. Output streams in real-time in the bottom panel
+1. The app opens with Phoenix on the left and the Claude panel on the right
+2. A draggable divider separates the panes (position persists between sessions)
+3. The **context bar** shows what Phoenix page you're on (project, trace, span, or session)
+4. Context-aware **command pills** appear in the Observe tab — click one to run it
+5. Output streams in real-time as markdown in the panel
+6. Completed analyses auto-save and appear in the **History** tab
 
-## Adding Commands
+## Commands
+
+Commands are loaded from `commands/*.json` at runtime. Each command declares a `context` field that controls when it appears based on Phoenix navigation state.
+
+| Command | Description | Context | Model |
+|---|---|---|---|
+| `phoenix-trace` | Analyze Trace | `trace` | Sonnet |
+| `phoenix-span` | Analyze Span | `span` | Sonnet |
+| `phoenix-batch` | Analyze Project | `project` | Sonnet |
+| `phoenix-session` | Analyze Session | `session` | Sonnet |
+
+### Adding Commands
 
 Drop a JSON file in the `commands/` directory:
 
@@ -80,66 +88,62 @@ Drop a JSON file in the `commands/` directory:
   "icon": "🚀",
   "prompt": "The prompt to send to Claude Code",
   "model": "sonnet",
-  "workingDir": "/path/to/project"
+  "workingDir": "/path/to/project",
+  "context": ["trace"]
 }
 ```
 
 ### Template Variables
 
-Use `{{variableName}}` in prompts — these are replaced at runtime:
-
-```json
-{
-  "prompt": "Review the code in {{projectDir}}",
-  "workingDir": "{{projectDir}}"
-}
-```
-
-Pass args when calling: `window.claudeShell.runCommand('my-cmd', { projectDir: '/path' })`
-
-### Included Example Commands
-
-| Command | Description | Model |
-|---|---|---|
-| `analyze-traces` | Summarize Phoenix trace patterns | Sonnet |
-| `generate-tests` | Generate tests for recent git changes | Sonnet |
-| `code-review` | Review staged git changes | Sonnet |
-| `project-status` | Quick git log + branch + TODOs | Haiku |
+Use `{{variableName}}` in prompts — replaced at runtime with context from the Phoenix iframe URL.
 
 ## Configuration
+
+![Settings modal](screenshot-settings.png)
 
 Environment variables:
 
 | Variable | Default | Description |
 |---|---|---|
 | `PHOENIX_URL` | `http://localhost:6006` | Phoenix dashboard URL |
+| `PHOENIX_API_KEY` | - | Authorization header for Phoenix API requests |
 | `CLAUDE_BIN` | `claude` | Path to Claude Code CLI binary |
+| `CLAUDE_TIMEOUT_MS` | - | Timeout for Claude CLI subprocess |
 | `NODE_ENV` | - | Set to `development` for DevTools |
+
+Runtime config is persisted at `~/.phoenix-claude-shell/config.json`.
 
 ## Project Structure
 
 ```
 phoenix-claude-shell/
-├── commands/               # Predefined command definitions (JSON)
-│   ├── analyze-traces.json
-│   ├── code-review.json
-│   ├── generate-tests.json
-│   └── project-status.json
+├── commands/                  # Command definitions (JSON)
+│   ├── phoenix-trace.json
+│   ├── phoenix-span.json
+│   ├── phoenix-batch.json
+│   └── phoenix-session.json
 ├── src/
-│   ├── main.js             # Electron main process (IPC + Claude spawning)
-│   ├── preload.js          # Context bridge (safe API for renderer)
-│   └── injections/
-│       ├── phoenix-overlay.js   # Injected UI (command palette, FAB, output panel)
-│       └── phoenix-overlay.css  # Injected styles
+│   ├── main.js                # Electron main process (IPC, Claude spawning, auth)
+│   ├── preload.js             # contextBridge → window.claudeShell API
+│   ├── shell.html             # Split-pane layout entry point
+│   ├── shell.js               # Renderer UI (DOM manipulation, IIFE)
+│   ├── shell.css              # Panel and layout styles
+│   ├── analysis-store.js      # File-based analysis persistence
+│   ├── marked.umd.js          # Vendored markdown renderer
+│   └── lucide.min.js          # Vendored icon library
+├── scripts/phoenix/           # Node CLI utilities for Phoenix API
+│   ├── common.js
+│   ├── fetch-trace.js
+│   ├── fetch-span.js
+│   ├── fetch-batch.js
+│   ├── fetch-session.js
+│   └── list-projects.js
+├── docs/                      # Internal documentation
+│   ├── analysis-persistence.md
+│   ├── commands.md
+│   ├── ipc-channels.md
+│   └── phoenix-scripts.md
 ├── package.json
+├── CLAUDE.md
 └── README.md
 ```
-
-## Next Steps / Ideas
-
-- [ ] Add argument prompting UI (modal that asks for `{{templateVars}}` before running)
-- [ ] Persist command history / recent outputs
-- [ ] Add a "custom prompt" freeform input in the palette
-- [ ] WebSocket connection to stream Phoenix trace data as context into Claude prompts
-- [ ] Tray icon with global shortcut for triggering commands from anywhere
-- [ ] Auto-detect project directory from Phoenix trace metadata

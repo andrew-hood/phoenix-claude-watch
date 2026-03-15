@@ -1,0 +1,9 @@
+{
+  "name": "Analyze Session",
+  "description": "Analyze traces within a Phoenix session for patterns and issues",
+  "icon": "Users",
+  "prompt": "Run this command to fetch session trace data:\n\n```bash\nnode scripts/phoenix/fetch-session.js --project {{project}} --session {{session}} {{args}}\n```\n\nDefault args: `--hours 24 --limit 50`. Pass `--hours 72` for wider window or `--limit 10` for quick check.\n\nThen analyze the output:\n\n1. **Session overview**: How many traces, total duration, overall health of this session\n\n2. **Trace metadata patterns**: Are traces in this session using consistent models, agent types, and configurations?\n\n3. **Cost analysis**: Total session cost, which traces are most expensive, token usage patterns\n\n4. **Error patterns**: Any recurring errors across session traces, correlation with specific agent types or timing\n\n5. **Timeline analysis**: How traces are distributed over time — bursty or steady, any gaps or anomalies\n\n6. **Recommendations**: Actionable items:\n   - Suggest specific traces to investigate with `/phoenix-trace <trace_id>`\n   - Identify optimization opportunities (model downgrades, prompt reduction)\n   - Flag any session-level concerns (e.g., excessive retries, escalating latency)",
+  "model": "sonnet",
+  "workingDir": null,
+  "context": ["session"]
+}

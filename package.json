@@ -1,0 +1,46 @@
+{
+  "name": "claude-observe",
+  "productName": "Claude Observe",
+  "version": "0.1.0",
+  "description": "Claude Observe — Electron app for Phoenix LiveDashboard with Claude Code integration",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "NODE_ENV=development electron .",
+    "build": "electron-builder --mac"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "marked": "^17.0.4"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.claudeobserve.app",
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "resources/icon.icns",
+      "target": "zip"
+    },
+    "files": [
+      "src/**/*",
+      "commands/**/*",
+      "scripts/**/*",
+      "node_modules/**/*",
+      "!node_modules/electron/**",
+      "!node_modules/electron-builder/**"
+    ],
+    "extraResources": [
+      {
+        "from": "commands",
+        "to": "commands"
+      },
+      {
+        "from": "scripts",
+        "to": "scripts"
+      }
+    ]
+  }
+}

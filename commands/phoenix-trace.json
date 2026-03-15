@@ -1,0 +1,9 @@
+{
+  "name": "Analyze Trace",
+  "description": "Analyze a Phoenix trace for performance and quality insights",
+  "icon": "Search",
+  "prompt": "/phoenix-trace {{traceId}} --project {{project}}",
+  "model": "sonnet",
+  "workingDir": null,
+  "context": ["trace"]
+}

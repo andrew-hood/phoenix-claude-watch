@@ -43,7 +43,7 @@ Electron app that wraps Phoenix LiveDashboard in a split-pane layout alongside a
 ### Setup
 
 ```bash
-cd phoenix-claude-shell
+cd phoenix-claude-watch
 npm install
 ```
 
@@ -70,11 +70,11 @@ npm run dev
 
 Commands are loaded from `commands/*.json` at runtime. Each command declares a `context` field that controls when it appears based on Phoenix navigation state.
 
-| Command | Description | Context | Model |
-|---|---|---|---|
-| `phoenix-trace` | Analyze Trace | `trace` | Sonnet |
-| `phoenix-span` | Analyze Span | `span` | Sonnet |
-| `phoenix-batch` | Analyze Project | `project` | Sonnet |
+| Command           | Description     | Context   | Model  |
+| ----------------- | --------------- | --------- | ------ |
+| `phoenix-trace`   | Analyze Trace   | `trace`   | Sonnet |
+| `phoenix-span`    | Analyze Span    | `span`    | Sonnet |
+| `phoenix-batch`   | Analyze Project | `project` | Sonnet |
 | `phoenix-session` | Analyze Session | `session` | Sonnet |
 
 ### Adding Commands
@@ -103,20 +103,20 @@ Use `{{variableName}}` in prompts — replaced at runtime with context from the 
 
 Environment variables:
 
-| Variable | Default | Description |
-|---|---|---|
-| `PHOENIX_URL` | `http://localhost:6006` | Phoenix dashboard URL |
-| `PHOENIX_API_KEY` | - | Authorization header for Phoenix API requests |
-| `CLAUDE_BIN` | `claude` | Path to Claude Code CLI binary |
-| `CLAUDE_TIMEOUT_MS` | - | Timeout for Claude CLI subprocess |
-| `NODE_ENV` | - | Set to `development` for DevTools |
+| Variable            | Default                 | Description                                   |
+| ------------------- | ----------------------- | --------------------------------------------- |
+| `PHOENIX_URL`       | `http://localhost:6006` | Phoenix dashboard URL                         |
+| `PHOENIX_API_KEY`   | -                       | Authorization header for Phoenix API requests |
+| `CLAUDE_BIN`        | `claude`                | Path to Claude Code CLI binary                |
+| `CLAUDE_TIMEOUT_MS` | -                       | Timeout for Claude CLI subprocess             |
+| `NODE_ENV`          | -                       | Set to `development` for DevTools             |
 
-Runtime config is persisted at `~/.phoenix-claude-shell/config.json`.
+Runtime config is persisted at `~/.phoenix-claude-watch/config.json`.
 
 ## Project Structure
 
 ```
-phoenix-claude-shell/
+phoenix-claude-watch/
 ├── commands/                  # Command definitions (JSON)
 │   ├── phoenix-trace.json
 │   ├── phoenix-span.json

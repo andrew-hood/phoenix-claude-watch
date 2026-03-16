@@ -3,6 +3,7 @@
   "description": "Review batch Phoenix traces for system health and trends",
   "icon": "BarChart3",
   "prompt": "Run this command to fetch batch trace data:\n\n```bash\nnode scripts/phoenix/fetch-batch.js --project {{project}} {{args}}\n```\n\nDefault args: `--hours 24 --limit 20`. Pass `--hours 72` for wider window or `--limit 5` for quick check.\n\nThen analyze the output:\n\n1. **System health**: Overall error rate, latency distribution, cost trends\n\n2. **Agent type analysis**: Compare performance across agent types — which are slow, expensive, or error-prone\n\n3. **Recurring errors**: For top errors, identify patterns and suggest likely causes\n\n4. **Cost concerns**: For expensive traces:\n   - Identify which prompts contribute most tokens\n   - Suggest concrete prompt reductions or model downgrades where appropriate\n\n5. **Recommendations**: Provide actionable items:\n   - Suggest specific traces to investigate with `/phoenix-trace <trace_id>`\n   - For systemic issues, describe the pattern and what to look for",
+  "allowedTools": ["Bash(node *)"],
   "model": "sonnet",
   "workingDir": null,
   "context": ["project"]

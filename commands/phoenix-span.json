@@ -3,7 +3,8 @@
   "description": "Fetch full detail for a specific Phoenix span (prompts, responses)",
   "icon": "Microscope",
   "prompt": "Run this command to fetch the full span data:\n\n```bash\nnode scripts/phoenix/fetch-span.js {{spanId}} --project {{project}}\n```\n\nThis returns the complete span including full prompt content and API response. Analyze:\n\n1. **Prompt analysis**: Review the prompt content for quality:\n   - Is the prompt clear, focused, and well-structured?\n   - Is it bloated with unnecessary instructions?\n   - Suggest specific edits to improve quality\n\n2. **Tool call validation**: If the span contains tool calls:\n   - Assess whether parameters look correct\n   - Assess whether the right tool was chosen for the task\n\n3. **Response quality**: Assess whether the LLM output suggests prompt improvements:\n   - Is the response on-topic and useful?\n   - Does it follow the prompt's instructions?\n   - If quality is poor, suggest specific prompt changes\n\n4. **Message history**: Check if the input message array is growing excessively across turns — flag if conversation trimming may be needed",
+  "allowedTools": ["Bash(node *)"],
   "model": "sonnet",
   "workingDir": null,
-  "context": ["span"]
+  "context": []
 }

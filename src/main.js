@@ -1,4 +1,16 @@
 require("dotenv").config();
+// Restore full shell PATH when launched from macOS Finder (which provides minimal PATH)
+if (process.platform === "darwin") {
+  try {
+    const { execFileSync } = require("child_process");
+    const shell = process.env.SHELL || "/bin/zsh";
+    const shellPath = execFileSync(shell, ["-ilc", "echo -n $PATH"], {
+      encoding: "utf8",
+      timeout: 5000,
+    });
+    if (shellPath) process.env.PATH = shellPath;
+  } catch {}
+}
 const { app, BrowserWindow, ipcMain, session, dialog, nativeTheme } = require("electron");
 const path = require("path");
 const fs = require("fs");
@@ -384,10 +396,22 @@ function executeClaudeCommand(command, args, context) {
     if (config.workingDir) {
       cliArgs.push("--add-dir", config.workingDir);
     }
+
+    // Pre-approve tools declared by the command (avoids interactive permission prompts)
+    const allowedTools = [...(command.allowedTools || [])];
+    if (config.workingDir) {
+      allowedTools.push("Read", "Grep");
+    }
+    for (const tool of allowedTools) {
+      cliArgs.push("--allowedTools", tool);
+    }
+
     cliArgs.push("--", prompt);
 
     const timeoutMs = command.timeoutMs || DEFAULT_TIMEOUT_MS;
-    const cwd = command.workingDir || path.resolve(__dirname, '..') || process.env.HOME;
+    // Run from the app's resource dir so relative paths in prompts (e.g. "node scripts/phoenix/...")
+    // resolve to the bundled scripts, not the user's home or agent repo
+    const cwd = command.workingDir || RESOURCES_DIR;
 
     console.log(`[Claude] Executing: ${CLAUDE_BIN} ${cliArgs.join(" ")}`);
     console.log(`[Claude] CWD: ${cwd} | Timeout: ${timeoutMs}ms`);

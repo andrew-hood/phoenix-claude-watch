@@ -3,7 +3,8 @@
   "description": "Analyze a Phoenix trace for performance and quality insights",
   "icon": "Search",
   "prompt": "/phoenix-trace {{traceId}} --project {{project}}",
+  "allowedTools": ["Bash(node *)"],
   "model": "sonnet",
   "workingDir": null,
-  "context": ["trace"]
+  "context": ["trace", "span"]
 }

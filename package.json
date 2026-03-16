@@ -1,7 +1,7 @@
 {
   "name": "claude-observe",
   "productName": "Claude Observe",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Claude Observe — Electron app for Phoenix LiveDashboard with Claude Code integration",
   "main": "src/main.js",
   "scripts": {

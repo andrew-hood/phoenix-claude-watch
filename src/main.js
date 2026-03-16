@@ -406,12 +406,16 @@ function executeClaudeCommand(command, args, context) {
       cliArgs.push("--allowedTools", tool);
     }
 
+    // Run from the app's resource dir so relative paths in prompts resolve to bundled scripts
+    const cwd = command.workingDir || RESOURCES_DIR;
+
+    // Resolve relative script paths to absolute so Claude CLI runs bundled scripts
+    // regardless of its own working directory (e.g. when --add-dir points elsewhere)
+    prompt = prompt.replaceAll('node scripts/', `node ${path.join(cwd, 'scripts')}/`);
+
     cliArgs.push("--", prompt);
 
     const timeoutMs = command.timeoutMs || DEFAULT_TIMEOUT_MS;
-    // Run from the app's resource dir so relative paths in prompts (e.g. "node scripts/phoenix/...")
-    // resolve to the bundled scripts, not the user's home or agent repo
-    const cwd = command.workingDir || RESOURCES_DIR;
 
     console.log(`[Claude] Executing: ${CLAUDE_BIN} ${cliArgs.join(" ")}`);
     console.log(`[Claude] CWD: ${cwd} | Timeout: ${timeoutMs}ms`);

@@ -2,7 +2,7 @@
   "name": "Analyze Trace",
   "description": "Analyze a Phoenix trace for performance and quality insights",
   "icon": "Search",
-  "prompt": "/phoenix-trace {{traceId}} --project {{project}}",
+  "prompt": "Run this command to fetch the trace data:\n\n```bash\nnode scripts/phoenix/fetch-trace.js {{traceId}} --project {{project}}\n```\n\nThis returns the full trace including span tree, token usage, tool calls, and errors. Analyze:\n\n1. **Trace overview**: Duration, span count, overall health (errors, latency)\n\n2. **Span tree analysis**: Review the execution flow:\n   - Are there unnecessary or redundant spans?\n   - Any spans with excessive duration that indicate bottlenecks?\n   - Is the nesting depth reasonable?\n\n3. **Token & cost analysis**: Review token usage by model:\n   - Which spans consume the most tokens?\n   - Are expensive models used where cheaper ones would suffice?\n   - Suggest specific model downgrades or prompt reductions\n\n4. **Tool call validation**: If tool calls are present:\n   - Are the right tools being selected?\n   - Any failed or unnecessary tool calls?\n\n5. **Error analysis**: For any errors in the trace:\n   - Identify root cause from the span tree context\n   - Suggest specific fixes\n\n6. **Recommendations**: Actionable improvements for performance, cost, or quality",
   "allowedTools": ["Bash(node *)"],
   "model": "sonnet",
   "workingDir": null,

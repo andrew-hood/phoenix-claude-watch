@@ -175,6 +175,10 @@
     if (ctx.params.projectId) {
       ctx.params.project = ctx.params.projectId;
     }
+    // In span context, spanId is the same value as traceId
+    if (ctx.type === "span" && ctx.params.spanId) {
+      ctx.params.traceId = ctx.params.spanId;
+    }
     // Pass session ID directly for script --session flag
     if (ctx.params.sessionId) {
       ctx.params.session = ctx.params.sessionId;

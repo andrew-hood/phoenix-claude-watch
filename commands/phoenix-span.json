@@ -1,8 +1,44 @@
 {
   "name": "Analyze Span",
-  "description": "Fetch full detail for a specific Phoenix span (prompts, responses)",
+  "type": "swarm",
+  "description": "Deep-dive analysis of a specific Phoenix span with specialist agents",
   "icon": "Microscope",
-  "prompt": "Run this command to fetch the full span data:\n\n```bash\nnode scripts/phoenix/fetch-span.js {{spanId}} --project {{project}}\n```\n\nThis returns the complete span including full prompt content and API response. Analyze:\n\n1. **Prompt analysis**: Review the prompt content for quality:\n   - Is the prompt clear, focused, and well-structured?\n   - Is it bloated with unnecessary instructions?\n   - Suggest specific edits to improve quality\n\n2. **Tool call validation**: If the span contains tool calls:\n   - Assess whether parameters look correct\n   - Assess whether the right tool was chosen for the task\n\n3. **Response quality**: Assess whether the LLM output suggests prompt improvements:\n   - Is the response on-topic and useful?\n   - Does it follow the prompt's instructions?\n   - If quality is poor, suggest specific prompt changes\n\n4. **Message history**: Check if the input message array is growing excessively across turns — flag if conversation trimming may be needed",
+  "fetch": {
+    "script": "node scripts/phoenix/fetch-span.js {{spanId}} --project {{project}}"
+  },
+  "summary": {
+    "prompt": "You are a senior observability engineer reviewing a specific Phoenix span from a custom AI agent using OpenAI and Anthropic models.\n\nProvide a concise high-level summary:\n1. Overview: what the span did, model used, duration, input/output tokens, status\n2. Key findings: top 3-5 issues (errors, cost concerns, latency, prompt quality, response quality)\n3. Recommended deep-dives: for each finding, which specialist would help most and why\n\nKeep it concise and specific — reference model names, token counts, timing data.\n\nAfter your analysis, output a recommendations block in exactly this format:\n\n<recommended_specialists>\ncost-optimizer\nerror-detective\n</recommended_specialists>\n\nList only the specialist IDs that are relevant to THIS specific span data. The available IDs are: cost-optimizer, error-detective, prompt-reviewer, performance-profiler. Only recommend specialists where the data shows clear issues in their domain. If nothing stands out for a specialist, omit it.\n\nSpan data:\n\n{{fetchData}}"
+  },
+  "specialists": [
+    {
+      "id": "cost-optimizer",
+      "name": "Cost Optimizer",
+      "icon": "DollarSign",
+      "enabled": true,
+      "prompt": "You are a Cost Optimizer analyzing a specific Phoenix span from a custom AI agent using OpenAI and Anthropic models.\n\nAnalyze the token usage and cost of this span. Focus on:\n\n1. **Token breakdown**: Input tokens, output tokens, cache read/creation tokens. Calculate the input:output ratio.\n2. **Model appropriateness**: Is the model used for this span appropriate for the task complexity? Could a cheaper model handle it?\n3. **Prompt size analysis**: Is the prompt oversized for what it's asking? Identify specific sections that could be trimmed.\n4. **Response efficiency**: Is the output length appropriate, or is the model generating unnecessary content?\n5. **Specific savings**: Quantify the cost of this span and estimate savings from recommended changes.\n\nThe span data is provided below as JSON:\n\n{{fetchData}}\n\nStructure your analysis as markdown with specific, actionable findings."
+    },
+    {
+      "id": "error-detective",
+      "name": "Error Detective",
+      "icon": "AlertTriangle",
+      "enabled": true,
+      "prompt": "You are an Error Detective analyzing a specific Phoenix span from a custom AI agent using OpenAI and Anthropic models.\n\nAnalyze this span for errors and issues. Focus on:\n\n1. **Error status**: Does this span have an error status? If so, what is the error message and full context?\n2. **Tool call failures**: If tool calls are present, did any fail? What went wrong?\n3. **Response anomalies**: Check for empty responses, truncated content, or unexpected output formats.\n4. **Input validation**: Does the input to this span look well-formed? Could bad input from a parent span have caused issues?\n5. **Fix recommendation**: For each issue found, provide a specific fix with code-level detail where possible.\n\nThe span data is provided below as JSON:\n\n{{fetchData}}\n\nStructure your analysis as markdown with specific, actionable findings."
+    },
+    {
+      "id": "prompt-reviewer",
+      "name": "Prompt Quality Reviewer",
+      "icon": "FileText",
+      "enabled": true,
+      "prompt": "You are a Prompt Quality Reviewer analyzing a specific Phoenix span from a custom AI agent using OpenAI and Anthropic models.\n\nAnalyze the prompt and response quality of this span in detail. Focus on:\n\n1. **Prompt structure**: Is the prompt well-organized with clear sections (system, user, examples)? Rate its clarity.\n2. **Instruction specificity**: Are instructions precise enough to get the desired output? Flag vague or ambiguous directives.\n3. **System prompt bloat**: Is the system prompt carrying unnecessary instructions, examples, or context for this specific task?\n4. **Response alignment**: Does the model's response actually follow the prompt's instructions? Flag divergences.\n5. **Concrete edits**: For each issue, show the specific prompt edit — quote the current text and provide the replacement.\n\nThe span data is provided below as JSON:\n\n{{fetchData}}\n\nStructure your analysis as markdown. Quote actual prompt and response snippets when making recommendations."
+    },
+    {
+      "id": "performance-profiler",
+      "name": "Performance Profiler",
+      "icon": "Gauge",
+      "enabled": true,
+      "prompt": "You are a Performance Profiler analyzing a specific Phoenix span from a custom AI agent using OpenAI and Anthropic models.\n\nAnalyze the performance characteristics of this span. Focus on:\n\n1. **Duration analysis**: How long did this span take? Is it proportional to the token count and model used?\n2. **Time to first token**: If available, assess the TTFT relative to the model and prompt size.\n3. **Token throughput**: Calculate tokens/second for both input processing and output generation.\n4. **Model comparison**: Based on the task, would a different model provide better latency? Estimate the speedup.\n5. **Optimization potential**: Could this span be made faster through prompt reduction, model switching, or architectural changes?\n\nThe span data is provided below as JSON:\n\n{{fetchData}}\n\nStructure your analysis as markdown with specific, actionable findings. Include timing data to support each recommendation."
+    }
+  ],
   "allowedTools": ["Bash(node *)"],
   "model": "sonnet",
   "workingDir": null,

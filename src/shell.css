@@ -34,8 +34,8 @@
   --border-panel: rgb(48, 48, 48);
 
   /* Accents */
-  --accent-primary: #3B82F6;
-  --accent-info: #3B82F6;
+  --accent-primary: #3b82f6;
+  --accent-info: #3b82f6;
 
   /* Overlays */
   --overlay-bg: rgba(0, 0, 0, 0.5);
@@ -82,8 +82,8 @@
   --toggle-bg: rgba(0, 0, 0, 0.15);
 
   /* Accents */
-  --accent-primary: #2563EB;
-  --accent-info: #2563EB;
+  --accent-primary: #2563eb;
+  --accent-info: #2563eb;
 
   /* Scrollbar */
   --scrollbar-thumb: rgba(0, 0, 0, 0.12);
@@ -102,7 +102,7 @@ body {
   overflow: hidden;
   background: var(--bg-base);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-feature-settings: 'cv02', 'cv03', 'cv04';
+  font-feature-settings: "cv02", "cv03", "cv04";
   font-size: 13px;
   color: var(--text-primary);
 }
@@ -134,7 +134,7 @@ body {
 }
 
 #drag-handle::after {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   bottom: 0;
@@ -227,7 +227,9 @@ body {
 
 .health-dot.healthy {
   background: #00d68f;
-  box-shadow: 0 0 0 3px rgba(0, 214, 143, 0.15), 0 0 6px rgba(0, 214, 143, 0.2);
+  box-shadow:
+    0 0 0 3px rgba(0, 214, 143, 0.15),
+    0 0 6px rgba(0, 214, 143, 0.2);
 }
 
 .health-dot.unhealthy {
@@ -276,7 +278,9 @@ body {
   font-size: 12px;
   font-weight: 500;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  transition: color 0.15s, border-color 0.15s;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
 }
 
 .tab-btn:hover {
@@ -304,8 +308,12 @@ body {
 }
 
 @keyframes tabFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* --- Full History (History Tab) --- */
@@ -423,7 +431,6 @@ body {
 /* --- Panel Sections --- */
 
 .panel-section {
-  border-bottom: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
 }
@@ -449,7 +456,6 @@ body {
 .output-content {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 12px;
   font-size: 12px;
   font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
   line-height: 1.6;
@@ -579,7 +585,7 @@ body {
 }
 
 .output-markdown a {
-  color: #93C5FD;
+  color: #93c5fd;
   text-decoration: none;
 }
 
@@ -600,7 +606,7 @@ body {
 
 .output-tool-call {
   margin: 6px 0;
-  border-left: 3px solid #3B82F6;
+  border-left: 3px solid #3b82f6;
   background: rgba(59, 130, 246, 0.06);
   border-radius: 4px;
   padding: 6px 10px;
@@ -609,7 +615,7 @@ body {
 
 .output-tool-call-header {
   font-weight: 600;
-  color: #93C5FD;
+  color: #93c5fd;
   margin-bottom: 4px;
 }
 
@@ -679,6 +685,16 @@ body {
   color: #ff6b6b;
 }
 
+.tool-call-counter {
+  display: inline-block;
+  padding: 2px 10px;
+  margin: 6px 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  border-radius: 10px;
+}
+
 .scroll-indicator {
   position: absolute;
   bottom: 4px;
@@ -708,10 +724,6 @@ body {
 }
 
 /* --- History --- */
-
-#history-section {
-  max-height: 180px;
-}
 
 .history-list {
   overflow-y: auto;
@@ -751,6 +763,25 @@ body {
 
 .history-badge.badge-error svg {
   color: #ff6b6b;
+}
+
+.history-delete {
+  display: none;
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  line-height: 0;
+}
+
+.history-delete:hover {
+  color: #ff6b6b;
+}
+
+.history-item:hover .history-delete {
+  display: flex;
 }
 
 .history-name {
@@ -802,8 +833,13 @@ body {
 }
 
 @keyframes statusPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 .toolbar-status.success {
   color: #00d68f;
@@ -1051,7 +1087,7 @@ body {
 }
 
 .toggle-switch input:checked + .toggle-slider {
-  background: #3B82F6;
+  background: #3b82f6;
 }
 
 .toggle-switch input:checked + .toggle-slider::before {
@@ -1072,7 +1108,10 @@ body {
   font-size: 12px;
   padding: 6px 10px;
   cursor: pointer;
-  transition: background 0.1s, color 0.1s, border-color 0.1s;
+  transition:
+    background 0.1s,
+    color 0.1s,
+    border-color 0.1s;
 }
 
 .settings-theme-btn:hover {
@@ -1083,7 +1122,7 @@ body {
 .settings-theme-btn.active {
   background: rgba(59, 130, 246, 0.2);
   border-color: rgba(59, 130, 246, 0.5);
-  color: #3B82F6;
+  color: #3b82f6;
 }
 
 .settings-footer {
@@ -1208,7 +1247,11 @@ body {
   color: var(--text-tertiary);
   font-size: 12px;
   cursor: pointer;
-  transition: background 0.1s, color 0.1s, border-color 0.15s, transform 0.1s;
+  transition:
+    background 0.1s,
+    color 0.1s,
+    border-color 0.15s,
+    transform 0.1s;
   white-space: nowrap;
 }
 
@@ -1243,19 +1286,204 @@ body {
 }
 
 .progress-bar::after {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   left: -40%;
   width: 40%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, var(--accent-primary), transparent);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--accent-primary),
+    transparent
+  );
   animation: progressSweep 1.5s ease-in-out infinite;
 }
 
 @keyframes progressSweep {
-  0% { left: -40%; }
-  100% { left: 100%; }
+  0% {
+    left: -40%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+/* --- Swarm Tabs --- */
+
+.swarm-tabs {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex: 1;
+  min-height: 0;
+}
+
+.swarm-tab-bar {
+  display: flex;
+  gap: 0;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-light);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+.swarm-tab-bar::-webkit-scrollbar {
+  height: 3px;
+}
+
+.swarm-tab-bar::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+}
+
+.swarm-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.swarm-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.swarm-tab.active {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent-primary);
+}
+
+.swarm-tab-panels {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.swarm-tab-panel {
+  display: none;
+  padding: 8px 12px;
+  overflow-y: auto;
+  height: 100%;
+}
+
+.swarm-tab-panel.active {
+  display: block;
+}
+
+.specialist-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--accent-info);
+}
+
+.specialist-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.specialist-status {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.specialist-status.running {
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+  animation: statusPulse 2s ease-in-out infinite;
+}
+
+.specialist-status.done {
+  background: rgba(0, 214, 143, 0.15);
+  color: #00d68f;
+}
+
+.specialist-status.failed {
+  background: rgba(255, 107, 107, 0.15);
+  color: #ff6b6b;
+}
+
+/* --- Specialist Picker --- */
+
+.specialist-picker {
+  margin: 12px 0;
+  padding: 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+}
+
+.specialist-picker-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.specialist-picker-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.specialist-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.specialist-option:hover {
+  background: var(--bg-hover);
+}
+
+.specialist-option input[type="checkbox"] {
+  accent-color: var(--accent-primary);
+}
+
+.specialist-option-icon {
+  display: flex;
+  color: var(--accent-info);
+}
+
+.specialist-option-name {
+  color: var(--text-primary);
+}
+
+.specialist-run-btn {
+  width: 100%;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(59, 130, 246, 0.5);
+  background: rgba(59, 130, 246, 0.2);
+  color: var(--accent-primary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.specialist-run-btn:hover {
+  background: rgba(59, 130, 246, 0.3);
 }
 
 /* --- History Empty State --- */

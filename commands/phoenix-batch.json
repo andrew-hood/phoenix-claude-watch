@@ -1,8 +1,44 @@
 {
   "name": "Analyze Project",
+  "type": "swarm",
   "description": "Review batch Phoenix traces for system health and trends",
   "icon": "BarChart3",
-  "prompt": "Run this command to fetch batch trace data:\n\n```bash\nnode scripts/phoenix/fetch-batch.js --project {{project}} {{args}}\n```\n\nDefault args: `--hours 24 --limit 20`. Pass `--hours 72` for wider window or `--limit 5` for quick check.\n\nThen analyze the output:\n\n1. **System health**: Overall error rate, latency distribution, cost trends\n\n2. **Agent type analysis**: Compare performance across agent types — which are slow, expensive, or error-prone\n\n3. **Recurring errors**: For top errors, identify patterns and suggest likely causes\n\n4. **Cost concerns**: For expensive traces:\n   - Identify which prompts contribute most tokens\n   - Suggest concrete prompt reductions or model downgrades where appropriate\n\n5. **Recommendations**: Provide actionable items:\n   - Suggest specific traces to investigate with `/phoenix-trace <trace_id>`\n   - For systemic issues, describe the pattern and what to look for",
+  "fetch": {
+    "script": "node scripts/phoenix/fetch-batch.js --project {{project}} --hours 24 --limit 20 --json"
+  },
+  "summary": {
+    "prompt": "You are a senior observability engineer reviewing batch Phoenix trace data from a custom AI agent system using OpenAI and Anthropic models.\n\nProvide a concise high-level summary:\n1. Overview: trace count, time window, models used, total tokens, total estimated cost\n2. Key findings: top 3-5 issues (error rates, cost outliers, latency trends, prompt problems)\n3. Recommended deep-dives: for each finding, which specialist would help most and why\n\nKeep it concise and specific — reference trace IDs, model names, token counts.\n\nAfter your analysis, output a recommendations block in exactly this format:\n\n<recommended_specialists>\ncost-optimizer\nerror-detective\n</recommended_specialists>\n\nList only the specialist IDs that are relevant to THIS specific batch data. The available IDs are: cost-optimizer, error-detective, prompt-reviewer, performance-profiler. Only recommend specialists where the data shows clear issues in their domain. If nothing stands out for a specialist, omit it.\n\nBatch trace data:\n\n{{fetchData}}"
+  },
+  "specialists": [
+    {
+      "id": "cost-optimizer",
+      "name": "Cost Optimizer",
+      "icon": "DollarSign",
+      "enabled": true,
+      "prompt": "You are a Cost Optimizer analyzing batch Phoenix trace data from a custom AI agent system using OpenAI and Anthropic models.\n\nAnalyze cost patterns across these traces. Focus on:\n\n1. **Cost distribution**: Which traces/agent types are most expensive? Rank by total token cost.\n2. **Model usage patterns**: Are expensive models being used consistently where cheaper alternatives exist? Identify systemic over-provisioning.\n3. **Token trends**: Are costs increasing over time in this batch? Identify if prompt sizes are growing.\n4. **Cost outliers**: Flag traces that cost significantly more than average. What makes them expensive?\n5. **Aggregate savings**: Estimate total savings from recommended model downgrades and prompt optimizations across all traces.\n\nThe batch trace data is provided below as JSON:\n\n{{fetchData}}\n\nStructure your analysis as markdown with specific, actionable findings."
+    },
+    {
+      "id": "error-detective",
+      "name": "Error Detective",
+      "icon": "AlertTriangle",
+      "enabled": true,
+      "prompt": "You are an Error Detective analyzing batch Phoenix trace data from a custom AI agent system using OpenAI and Anthropic models.\n\nAnalyze error patterns across these traces. Focus on:\n\n1. **Error rate**: Overall error rate and trend over the time window. Is it improving or degrading?\n2. **Recurring errors**: Group similar errors and rank by frequency. For each, identify the likely root cause.\n3. **Error correlation**: Do errors correlate with specific models, agent types, time of day, or trace complexity?\n4. **Cascading failures**: Identify traces where one error caused a chain of subsequent failures.\n5. **Specific traces to investigate**: For the top error patterns, recommend specific trace IDs to examine in detail.\n\nThe batch trace data is provided below as JSON:\n\n{{fetchData}}\n\nStructure your analysis as markdown with specific, actionable findings."
+    },
+    {
+      "id": "prompt-reviewer",
+      "name": "Prompt Quality Reviewer",
+      "icon": "FileText",
+      "enabled": true,
+      "prompt": "You are a Prompt Quality Reviewer analyzing batch Phoenix trace data from a custom AI agent system using OpenAI and Anthropic models.\n\nAnalyze prompt patterns across these traces. Focus on:\n\n1. **System prompt consistency**: Are system prompts consistent across traces of the same agent type? Flag drift or inconsistencies.\n2. **Prompt size trends**: Are prompts growing over time? Identify traces with the largest prompts.\n3. **Agent type comparison**: Compare prompt quality across different agent types. Which have the best instruction-following?\n4. **Common prompt issues**: Identify recurring prompt problems (ambiguity, redundancy, missing constraints) across multiple traces.\n5. **Improvement priorities**: Rank which prompt changes would have the highest impact across the most traces.\n\nThe batch trace data is provided below as JSON:\n\n{{fetchData}}\n\nStructure your analysis as markdown with specific, actionable findings."
+    },
+    {
+      "id": "performance-profiler",
+      "name": "Performance Profiler",
+      "icon": "Gauge",
+      "enabled": true,
+      "prompt": "You are a Performance Profiler analyzing batch Phoenix trace data from a custom AI agent system using OpenAI and Anthropic models.\n\nAnalyze performance patterns across these traces. Focus on:\n\n1. **Latency distribution**: P50, P90, P99 trace durations. Which traces are slowest?\n2. **Performance trends**: Is latency stable, improving, or degrading over the time window?\n3. **Agent type performance**: Compare latency across agent types. Which are consistently slow?\n4. **Model latency patterns**: Compare response times across OpenAI vs Anthropic models at scale.\n5. **Optimization priorities**: Identify the top 3 changes that would most reduce average trace duration, with estimated impact.\n\nThe batch trace data is provided below as JSON:\n\n{{fetchData}}\n\nStructure your analysis as markdown with specific, actionable findings."
+    }
+  ],
   "allowedTools": ["Bash(node *)"],
   "model": "sonnet",
   "workingDir": null,

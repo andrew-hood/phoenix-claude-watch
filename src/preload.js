@@ -46,6 +46,10 @@ contextBridge.exposeInMainWorld("claudeShell", {
   loadAnalysis: (id) => ipcRenderer.invoke("claude:load-analysis", id),
   deleteAnalysis: (id) => ipcRenderer.invoke("claude:delete-analysis", id),
 
+  // Run selected specialists (phase 2 of swarm)
+  runSpecialists: (swarmSessionId, specialistIds) =>
+    ipcRenderer.invoke("claude:run-specialists", { swarmSessionId, specialistIds }),
+
   // Subscribe to real-time output streaming
   onOutputChunk: (callback) => {
     const handler = (_event, data) => callback(data);

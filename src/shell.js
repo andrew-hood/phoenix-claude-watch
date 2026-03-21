@@ -6,10 +6,18 @@
   let isHealthy = false;
   let isSettingsOpen = false;
   let currentOutput = "";
+  let toolCallCount = 0;
   let isRunning = false;
   let userScrolled = false;
+  let swarmMode = false;
+  let specialistState = new Map(); // id -> { name, icon, output, tabBtn, panel, markdownEl, statusEl, status, debounceTimer, renderedBlockCounts }
+  let swarmTabBar = null;
+  let swarmTabPanels = null;
+  let activeSwarmTabId = null;
   let currentContext = { type: "global", params: {}, path: "" };
   let activeTab = "observe";
+  let currentSwarmSessionId = null;
+  let availableSpecialists = [];
   const config = await window.claudeShell.getConfig();
   let phoenixUrl = config.phoenixUrl || "http://localhost:6006";
   const projectCache = {};
@@ -27,7 +35,6 @@
   const btnCopy = $("#btn-copy");
   const btnClear = $("#btn-clear");
   const collapseBtn = $("#panel-collapse");
-  const historyList = $("#history-list");
   const fullHistoryList = $("#full-history-list");
   const dragHandle = $("#drag-handle");
   const dragOverlay = $("#drag-overlay");
@@ -36,7 +43,6 @@
   const contextLabel = $("#context-label");
   const contextDetail = $("#context-detail");
   const contextAction = $("#context-action");
-  const historySection = $("#history-section");
   const outputEmpty = $("#output-empty");
   const commandPills = $("#command-pills");
   const progressBar = $("#progress-bar");
@@ -214,10 +220,7 @@
       contextAction.title = `Run: ${contextCmds[0].name} — ${contextCmds[0].description}`;
       contextAction.dataset.commandId = contextCmds[0].id;
     }
-    const observeContext = ["project", "trace", "span", "session"].includes(currentContext.type);
-    historySection.classList.toggle("hidden", !observeContext);
     renderCommandPills();
-    refreshHistory();
 
     console.log(`[Context] ${ctx.type}`, ctx.params);
   }
@@ -279,11 +282,46 @@
     commands = await window.claudeShell.listCommands();
     renderCommandPills();
 
-    // Load history
-    refreshHistory();
-
     // Streaming output — structured JSON events + legacy fallback
-    window.claudeShell.onOutputChunk(({ chunk, type, event }) => {
+    window.claudeShell.onOutputChunk((data) => {
+      const { chunk, type, event, specialistId } = data;
+
+      // Swarm lifecycle events
+      if (type === "swarm-fetch-start") {
+        return; // fetch is implicit, no UI needed
+      }
+      if (type === "swarm-fetch-error") {
+        appendOutput(`Fetch error: ${data.error}\n`, "error");
+        return;
+      }
+      if (type === "swarm-summary-start") {
+        handleSwarmSummaryStart(data.swarmSessionId, data.specialists);
+        return;
+      }
+      if (type === "swarm-summary-complete") {
+        handleSwarmSummaryComplete(data.swarmSessionId, data.exitCode);
+        return;
+      }
+      if (type === "swarm-start") {
+        handleSwarmStart(data.specialists);
+        return;
+      }
+      if (type === "swarm-complete") {
+        handleSwarmComplete(data.results);
+        return;
+      }
+
+      // Route to specialist (summary or real specialist) if in swarm mode
+      if ((swarmMode || specialistId === "summary") && specialistId) {
+        if (type === "json-event" && event) {
+          renderSpecialistEvent(specialistId, event);
+        } else if (chunk) {
+          appendSpecialistOutput(specialistId, chunk);
+        }
+        return;
+      }
+
+      // Default single-agent path
       if (type === "json-event" && event) {
         renderStructuredEvent(event);
       } else {
@@ -293,9 +331,7 @@
     });
 
     // Auto-save notification
-    window.claudeShell.onAnalysisSaved(() => {
-      refreshHistory();
-    });
+    window.claudeShell.onAnalysisSaved(() => {});
 
     // Frame navigation — context-aware panel updates
     window.claudeShell.onFrameNavigated(({ url }) => {
@@ -311,7 +347,13 @@
     // Wire up toolbar
     btnCancel.addEventListener("click", cancelCommand);
     btnCopy.addEventListener("click", () => {
-      navigator.clipboard.writeText(currentOutput);
+      let text = currentOutput;
+      if (specialistState.size > 0) {
+        text = Array.from(specialistState.values())
+          .map((s) => `## ${s.name}\n\n${s.output}`)
+          .join("\n\n---\n\n");
+      }
+      navigator.clipboard.writeText(text);
       btnCopyText.textContent = "Copied!";
       setTimeout(() => { btnCopyText.textContent = "Copy"; }, 1500);
     });
@@ -499,12 +541,24 @@
   function clearOutput() {
     outputEl.innerHTML = "";
     currentOutput = "";
+    toolCallCount = 0;
     markdownContainer = null;
     if (renderDebounceTimer) clearTimeout(renderDebounceTimer);
     renderDebounceTimer = null;
     userScrolled = false;
     scrollIndicator.classList.add("hidden");
     renderedBlockCounts.clear();
+    // Clear swarm state
+    for (const state of specialistState.values()) {
+      if (state.debounceTimer) clearTimeout(state.debounceTimer);
+    }
+    specialistState.clear();
+    swarmMode = false;
+    currentSwarmSessionId = null;
+    availableSpecialists = [];
+    swarmTabBar = null;
+    swarmTabPanels = null;
+    activeSwarmTabId = null;
     showEmptyState();
   }
 
@@ -521,6 +575,7 @@
     const args = { ...getContextArgs(), ...explicitArgs };
 
     currentOutput = "";
+    toolCallCount = 0;
     outputEl.innerHTML = "";
     markdownContainer = null;
     renderedBlockCounts.clear();
@@ -559,56 +614,70 @@
   }
 
   // --- History ---
-  async function refreshHistory() {
-    const contextFilter =
-      currentContext.type !== "global" ? currentContext.params : undefined;
-    const analyses = await window.claudeShell.listAnalyses({
-      limit: 20,
-      context: contextFilter,
-    });
-    if (analyses.length === 0) {
-      historyList.innerHTML =
-        `<div class="history-empty">
-          <span class="history-empty-icon">${icon('clock', 20)}</span>
-          <span>No history yet</span>
-        </div>`;
-      return;
-    }
-
-    historyList.innerHTML = analyses
-      .map((a) => {
-        const badgeIcon =
-          a.exitCode === 0 ? icon("CheckCircle", 14) : icon("XCircle", 14);
-        const badgeClass = a.exitCode === 0 ? "badge-success" : "badge-error";
-        const time = relativeTime(a.completedAt);
-        return `
-        <div class="history-item" data-id="${a.id}" data-command="${a.commandId}">
-          <div class="history-item-header">
-            <span class="history-badge ${badgeClass}">${badgeIcon}</span>
-            <span class="history-name">${a.commandId}</span>
-            <span class="history-time">${time}</span>
-          </div>
-          <div class="history-preview">${escapeHtml(a.preview || "")}</div>
-        </div>`;
-      })
-      .join("");
-
-    historyList.querySelectorAll(".history-item").forEach((el) => {
-      el.addEventListener("click", () => loadHistoryItem(el.dataset.id));
-      el.addEventListener("dblclick", () => runCommand(el.dataset.command));
-    });
-  }
-
   async function loadHistoryItem(id) {
     const analysis = await window.claudeShell.loadAnalysis(id);
     if (!analysis) return;
 
     outputEl.innerHTML = "";
+    toolCallCount = 0;
     markdownContainer = null;
     renderedBlockCounts.clear();
+    for (const state of specialistState.values()) {
+      if (state.debounceTimer) clearTimeout(state.debounceTimer);
+    }
+    specialistState.clear();
+    swarmMode = false;
     hideEmptyState();
     currentOutput = analysis.output;
-    renderMarkdown(currentOutput);
+
+    // Detect swarm output by section headers and restore as tabs
+    const swarmSections = parseSwarmOutput(currentOutput);
+    if (swarmSections.length > 1) {
+      const tabContainer = document.createElement("div");
+      tabContainer.className = "swarm-tabs";
+
+      swarmTabBar = document.createElement("div");
+      swarmTabBar.className = "swarm-tab-bar";
+      tabContainer.appendChild(swarmTabBar);
+
+      swarmTabPanels = document.createElement("div");
+      swarmTabPanels.className = "swarm-tab-panels";
+      tabContainer.appendChild(swarmTabPanels);
+
+      swarmTabBar.addEventListener("click", (e) => {
+        const btn = e.target.closest(".swarm-tab");
+        if (!btn) return;
+        switchSwarmTab(btn.dataset.tabId);
+      });
+
+      swarmSections.forEach((sec, i) => {
+        const tabId = `history-${i}`;
+        const tabBtn = document.createElement("button");
+        tabBtn.className = `swarm-tab${i === 0 ? " active" : ""}`;
+        tabBtn.dataset.tabId = tabId;
+        tabBtn.innerHTML = `
+          <span class="specialist-icon">${icon("Zap", 14)}</span>
+          <span class="specialist-name">${escapeHtml(sec.name)}</span>
+          <span class="specialist-status done">Done</span>
+        `;
+        swarmTabBar.appendChild(tabBtn);
+
+        const panel = document.createElement("div");
+        panel.className = `swarm-tab-panel${i === 0 ? " active" : ""}`;
+        panel.dataset.tabId = tabId;
+        const mdEl = document.createElement("div");
+        mdEl.className = "output-markdown";
+        mdEl.innerHTML = md.parse(sec.content);
+        panel.appendChild(mdEl);
+        swarmTabPanels.appendChild(panel);
+      });
+
+      activeSwarmTabId = "history-0";
+      outputEl.appendChild(tabContainer);
+    } else {
+      renderMarkdown(currentOutput);
+    }
+
     const badge = analysis.exitCode === 0 ? "Done" : "Failed";
     setStatus(
       analysis.exitCode === 0 ? "success" : "error",
@@ -640,6 +709,25 @@
     const d = document.createElement("div");
     d.textContent = str;
     return d.innerHTML;
+  }
+
+  // Parse swarm combined output (## Name sections separated by ---)
+  function parseRecommendedSpecialists(output) {
+    const match = output.match(/<recommended_specialists>\s*([\s\S]*?)\s*<\/recommended_specialists>/);
+    if (!match) return null;
+    return match[1].trim().split(/\s+/).filter(Boolean);
+  }
+
+  function parseSwarmOutput(text) {
+    const sections = [];
+    const parts = text.split(/\n---\n/);
+    for (const part of parts) {
+      const match = part.match(/^##\s+(.+)\n\n([\s\S]*)$/);
+      if (match) {
+        sections.push({ name: match[1].trim(), content: match[2].trim() });
+      }
+    }
+    return sections;
   }
 
   // --- Tabs ---
@@ -677,6 +765,7 @@
             <span class="history-badge ${badgeClass}">${badgeIcon}</span>
             <span class="history-name">${a.commandId}</span>
             <span class="history-time">${time}</span>
+            <button class="history-delete" data-id="${a.id}" title="Delete">${icon('Trash2', 14)}</button>
           </div>
           <div class="history-preview">${escapeHtml(a.preview || "")}</div>
         </div>`;
@@ -687,6 +776,13 @@
       el.addEventListener("click", () => {
         loadHistoryItem(el.dataset.id);
         switchTab("observe");
+      });
+    });
+    fullHistoryList.querySelectorAll(".history-delete").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        await window.claudeShell.deleteAnalysis(btn.dataset.id);
+        refreshFullHistory();
       });
     });
   }
@@ -804,31 +900,14 @@
   }
 
   function renderToolCall(block) {
-    const el = document.createElement("div");
-    el.className = "output-tool-call";
-
-    const header = document.createElement("div");
-    header.className = "output-tool-call-header";
-    header.textContent = `Tool: ${block.name || "unknown"}`;
-    el.appendChild(header);
-
-    if (block.input) {
-      const pre = document.createElement("pre");
-      pre.className = "output-tool-call-input";
-      pre.textContent =
-        typeof block.input === "string"
-          ? block.input
-          : JSON.stringify(block.input, null, 2);
-
-      const details = document.createElement("details");
-      const summary = document.createElement("summary");
-      summary.textContent = "Input";
-      details.appendChild(summary);
-      details.appendChild(pre);
-      el.appendChild(details);
+    toolCallCount++;
+    let counter = outputEl.querySelector(".tool-call-counter");
+    if (!counter) {
+      counter = document.createElement("div");
+      counter.className = "tool-call-counter";
+      outputEl.appendChild(counter);
     }
-
-    outputEl.appendChild(el);
+    counter.textContent = `\u{1F527} ${toolCallCount} tool call${toolCallCount === 1 ? "" : "s"}`;
     if (!userScrolled) outputEl.scrollTop = outputEl.scrollHeight;
   }
 
@@ -850,29 +929,325 @@
   }
 
   function renderToolResult(block) {
-    const el = document.createElement("div");
-    el.className = "output-tool-result";
+    // Suppressed — tool results are noise without visible tool call blocks
+    return;
+  }
 
-    // tool_result content can be a string or array of content blocks
-    const content = block.content;
-    if (typeof content === "string") {
-      el.textContent = content;
-    } else if (Array.isArray(content)) {
-      for (const item of content) {
-        if (item.type === "text") {
-          const pre = document.createElement("pre");
-          pre.textContent = item.text;
-          el.appendChild(pre);
+  // --- Swarm Rendering ---
+
+  function switchSwarmTab(tabId) {
+    if (!swarmTabBar || !swarmTabPanels) return;
+    activeSwarmTabId = tabId;
+    swarmTabBar.querySelectorAll(".swarm-tab").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.tabId === tabId);
+    });
+    swarmTabPanels.querySelectorAll(".swarm-tab-panel").forEach((p) => {
+      p.classList.toggle("active", p.dataset.tabId === tabId);
+    });
+  }
+
+  function handleSwarmSummaryStart(swarmSessionId, specialists) {
+    currentSwarmSessionId = swarmSessionId;
+    availableSpecialists = specialists;
+
+    // Create tab container (persists across summary + specialists)
+    const tabContainer = document.createElement("div");
+    tabContainer.className = "swarm-tabs";
+
+    swarmTabBar = document.createElement("div");
+    swarmTabBar.className = "swarm-tab-bar";
+    tabContainer.appendChild(swarmTabBar);
+
+    swarmTabPanels = document.createElement("div");
+    swarmTabPanels.className = "swarm-tab-panels";
+    tabContainer.appendChild(swarmTabPanels);
+
+    outputEl.appendChild(tabContainer);
+
+    // Tab click handler (event delegation)
+    swarmTabBar.addEventListener("click", (e) => {
+      const btn = e.target.closest(".swarm-tab");
+      if (!btn) return;
+      switchSwarmTab(btn.dataset.tabId);
+    });
+
+    // Create summary tab
+    const tabBtn = document.createElement("button");
+    tabBtn.className = "swarm-tab active";
+    tabBtn.dataset.tabId = "summary";
+    tabBtn.innerHTML = `
+      <span class="specialist-icon">${icon("FileSearch", 14)}</span>
+      <span class="specialist-name">Summary</span>
+      <span class="specialist-status running">Running...</span>
+    `;
+    swarmTabBar.appendChild(tabBtn);
+
+    const panel = document.createElement("div");
+    panel.className = "swarm-tab-panel active";
+    panel.dataset.tabId = "summary";
+    const mdEl = document.createElement("div");
+    mdEl.className = "output-markdown";
+    panel.appendChild(mdEl);
+    swarmTabPanels.appendChild(panel);
+
+    activeSwarmTabId = "summary";
+
+    specialistState.set("summary", {
+      name: "Summary",
+      icon: "FileSearch",
+      output: "",
+      tabBtn: tabBtn,
+      panel: panel,
+      markdownEl: mdEl,
+      statusEl: tabBtn.querySelector(".specialist-status"),
+      status: "running",
+      debounceTimer: null,
+      renderedBlockCounts: new Map(),
+    });
+
+    if (!userScrolled) outputEl.scrollTop = outputEl.scrollHeight;
+  }
+
+  function handleSwarmSummaryComplete(swarmSessionId, exitCode) {
+    const state = specialistState.get("summary");
+    if (state) {
+      const success = exitCode === 0;
+      state.statusEl.textContent = success ? "Done" : "Failed";
+      state.statusEl.className = `specialist-status ${success ? "done" : "failed"}`;
+      state.status = success ? "done" : "failed";
+    }
+
+    // Parse specialist recommendations from summary output
+    const recommendedIds = state ? parseRecommendedSpecialists(state.output) : null;
+
+    // Render specialist picker with recommendations
+    renderSpecialistPicker(recommendedIds);
+  }
+
+  function renderSpecialistPicker(recommendedIds) {
+    const picker = document.createElement("div");
+    picker.className = "specialist-picker";
+
+    const header = document.createElement("div");
+    header.className = "specialist-picker-header";
+    header.textContent = "Select analyses to run:";
+    picker.appendChild(header);
+
+    const options = document.createElement("div");
+    options.className = "specialist-picker-options";
+
+    for (const spec of availableSpecialists) {
+      const label = document.createElement("label");
+      label.className = "specialist-option";
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.value = spec.id;
+      checkbox.checked = recommendedIds ? recommendedIds.includes(spec.id) : true;
+
+      const iconSpan = document.createElement("span");
+      iconSpan.className = "specialist-option-icon";
+      iconSpan.innerHTML = icon(spec.icon || "Zap", 14);
+
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "specialist-option-name";
+      nameSpan.textContent = spec.name;
+
+      label.appendChild(checkbox);
+      label.appendChild(iconSpan);
+      label.appendChild(nameSpan);
+      options.appendChild(label);
+    }
+
+    picker.appendChild(options);
+
+    const runBtn = document.createElement("button");
+    runBtn.className = "specialist-run-btn";
+    const initialCount = recommendedIds
+      ? availableSpecialists.filter(s => recommendedIds.includes(s.id)).length
+      : availableSpecialists.length;
+    runBtn.textContent = `Run Selected (${initialCount})`;
+    picker.appendChild(runBtn);
+
+    // Update button count on checkbox change
+    options.addEventListener("change", () => {
+      const count = options.querySelectorAll("input:checked").length;
+      runBtn.textContent = `Run Selected (${count})`;
+    });
+
+    // Run button click
+    runBtn.addEventListener("click", async () => {
+      const checked = Array.from(options.querySelectorAll("input:checked"))
+        .map((cb) => cb.value);
+      if (checked.length === 0) return;
+
+      // Remove picker, set running state
+      picker.remove();
+      isRunning = true;
+      btnCancel.classList.remove("hidden");
+      progressBar.classList.remove("hidden");
+      setStatus("running", "Running specialists...");
+
+      try {
+        const result = await window.claudeShell.runSpecialists(currentSwarmSessionId, checked);
+        if (result.success) {
+          setStatus("success", `Done (exit ${result.exitCode})`);
+        } else {
+          setStatus("error", `Failed: ${result.error}`);
+        }
+      } catch (err) {
+        setStatus("error", `Error: ${err.message}`);
+      } finally {
+        btnCancel.classList.add("hidden");
+        progressBar.classList.add("hidden");
+        isRunning = false;
+      }
+    });
+
+    outputEl.appendChild(picker);
+    if (!userScrolled) outputEl.scrollTop = outputEl.scrollHeight;
+  }
+
+  function handleSwarmStart(specialists) {
+    swarmMode = true;
+    // Keep summary state, clear specialist entries only
+    const summaryState = specialistState.get("summary");
+    specialistState.clear();
+    if (summaryState) specialistState.set("summary", summaryState);
+
+    let firstId = null;
+    for (const spec of specialists) {
+      if (!firstId) firstId = spec.id;
+
+      const tabBtn = document.createElement("button");
+      tabBtn.className = "swarm-tab";
+      tabBtn.dataset.tabId = spec.id;
+      tabBtn.innerHTML = `
+        <span class="specialist-icon">${icon(spec.icon || "Zap", 14)}</span>
+        <span class="specialist-name">${escapeHtml(spec.name)}</span>
+        <span class="specialist-status running">Running...</span>
+      `;
+      swarmTabBar.appendChild(tabBtn);
+
+      const panel = document.createElement("div");
+      panel.className = "swarm-tab-panel";
+      panel.dataset.tabId = spec.id;
+      const mdEl = document.createElement("div");
+      mdEl.className = "output-markdown";
+      panel.appendChild(mdEl);
+      swarmTabPanels.appendChild(panel);
+
+      specialistState.set(spec.id, {
+        name: spec.name,
+        icon: spec.icon,
+        output: "",
+        tabBtn: tabBtn,
+        panel: panel,
+        markdownEl: mdEl,
+        statusEl: tabBtn.querySelector(".specialist-status"),
+        status: "running",
+        debounceTimer: null,
+        renderedBlockCounts: new Map(),
+      });
+    }
+
+    // Auto-switch to first specialist tab
+    if (firstId) switchSwarmTab(firstId);
+
+    if (!userScrolled) outputEl.scrollTop = outputEl.scrollHeight;
+  }
+
+  function renderSpecialistEvent(specialistId, event) {
+    const state = specialistState.get(specialistId);
+    if (!state) return;
+
+    if (event.type === "assistant" && event.message?.content) {
+      const msgId = event.message.id || "unknown";
+      const blocks = event.message.content || [];
+      const alreadyRendered = state.renderedBlockCounts.get(msgId) || 0;
+      const newBlocks = blocks.slice(alreadyRendered);
+      if (newBlocks.length === 0) return;
+
+      for (const block of newBlocks) {
+        if (block.type === "text" && block.text) {
+          state.output += block.text;
+          scheduleSpecialistRender(specialistId);
+        } else if (block.type === "tool_use") {
+          renderSpecialistToolCall(state, block);
+        } else if (block.type === "thinking" && block.thinking) {
+          renderSpecialistThinking(state, block.thinking);
         }
       }
+      state.renderedBlockCounts.set(msgId, blocks.length);
+    } else if (event.type === "result") {
+      if (typeof event.result === "string") {
+        state.output += event.result;
+        scheduleSpecialistRender(specialistId);
+      }
+      const usage = event.usage || event.result?.usage;
+      if (usage) {
+        const stats = `\n\n*[${usage.input_tokens || 0} in / ${usage.output_tokens || 0} out tokens]*\n`;
+        state.output += stats;
+        scheduleSpecialistRender(specialistId);
+      }
     }
+  }
 
-    if (block.is_error) {
-      el.classList.add("output-tool-result-error");
+  function appendSpecialistOutput(specialistId, chunk) {
+    const state = specialistState.get(specialistId);
+    if (!state) return;
+    state.output += chunk;
+    scheduleSpecialistRender(specialistId);
+  }
+
+  function scheduleSpecialistRender(specialistId) {
+    const state = specialistState.get(specialistId);
+    if (!state) return;
+    if (state.debounceTimer) clearTimeout(state.debounceTimer);
+    state.debounceTimer = setTimeout(() => {
+      state.markdownEl.innerHTML = md.parse(state.output);
+      state.debounceTimer = null;
+      if (!userScrolled) outputEl.scrollTop = outputEl.scrollHeight;
+    }, 50);
+  }
+
+  function renderSpecialistToolCall(state, block) {
+    if (!state.toolCallCount) state.toolCallCount = 0;
+    state.toolCallCount++;
+    let counter = state.panel.querySelector(".tool-call-counter");
+    if (!counter) {
+      counter = document.createElement("div");
+      counter.className = "tool-call-counter";
+      state.panel.appendChild(counter);
     }
-
-    outputEl.appendChild(el);
+    counter.textContent = `\u{1F527} ${state.toolCallCount} tool call${state.toolCallCount === 1 ? "" : "s"}`;
     if (!userScrolled) outputEl.scrollTop = outputEl.scrollHeight;
+  }
+
+  function renderSpecialistThinking(state, text) {
+    const details = document.createElement("details");
+    details.className = "output-thinking";
+    const summary = document.createElement("summary");
+    summary.textContent = "Thinking...";
+    details.appendChild(summary);
+    const content = document.createElement("div");
+    content.className = "output-thinking-content";
+    content.textContent = text;
+    details.appendChild(content);
+    state.panel.appendChild(details);
+    if (!userScrolled) outputEl.scrollTop = outputEl.scrollHeight;
+  }
+
+  function handleSwarmComplete(results) {
+    for (const r of results) {
+      const state = specialistState.get(r.specialistId);
+      if (!state) continue;
+      const success = r.exitCode === 0;
+      state.statusEl.textContent = success ? "Done" : "Failed";
+      state.statusEl.className = `specialist-status ${success ? "done" : "failed"}`;
+      state.status = success ? "done" : "failed";
+    }
+    swarmMode = false;
   }
 
   // --- Boot ---

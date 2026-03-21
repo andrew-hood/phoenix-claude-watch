@@ -97,7 +97,9 @@ function saveSettings(settings) {
 }
 
 let mainWindow = null;
-let activeProcess = null;
+let activeProcesses = new Map();
+const swarmSessions = new Map(); // sessionId -> { fetchData, command, args, context, startedAt }
+const SWARM_SESSION_TTL = 30 * 60 * 1000; // 30 minutes
 
 // Register (or re-register) the auth header interceptor for Phoenix requests
 function registerAuthInterceptor(apiKey) {
@@ -187,7 +189,9 @@ ipcMain.handle("claude:run-command", async (event, { commandId, args = {}, conte
   }
 
   try {
-    const result = await executeClaudeCommand(command, args, context);
+    const result = command.type === "swarm"
+      ? await executeSwarmCommand(command, args, context)
+      : await executeClaudeCommand(command, args, context);
     return { success: true, ...result };
   } catch (err) {
     return { success: false, error: err.message };
@@ -221,14 +225,16 @@ ipcMain.handle("claude:health", async () => {
   });
 });
 
-// Cancel a running Claude process
+// Cancel running Claude process(es)
 ipcMain.handle("claude:cancel", async () => {
-  if (activeProcess && !activeProcess.killed) {
-    activeProcess.kill("SIGTERM");
-    activeProcess = null;
-    return { cancelled: true };
+  if (activeProcesses.size === 0) {
+    return { cancelled: false, reason: "No active process" };
   }
-  return { cancelled: false, reason: "No active process" };
+  for (const [id, proc] of activeProcesses) {
+    if (!proc.killed) proc.kill("SIGTERM");
+  }
+  activeProcesses.clear();
+  return { cancelled: true };
 });
 
 // Config
@@ -374,7 +380,7 @@ function executeClaudeCommand(command, args, context) {
     // Build the prompt — supports simple template interpolation
     let prompt = command.prompt;
     for (const [key, value] of Object.entries(args)) {
-      if (typeof value !== "string" || value.length > 1000) continue;
+      if (typeof value !== "string") continue;
       prompt = prompt.replaceAll(`{{${key}}}`, value);
     }
 
@@ -413,21 +419,21 @@ function executeClaudeCommand(command, args, context) {
     // regardless of its own working directory (e.g. when --add-dir points elsewhere)
     prompt = prompt.replaceAll('node scripts/', `node ${path.join(cwd, 'scripts')}/`);
 
-    cliArgs.push("--", prompt);
-
     const timeoutMs = command.timeoutMs || DEFAULT_TIMEOUT_MS;
 
-    console.log(`[Claude] Executing: ${CLAUDE_BIN} ${cliArgs.join(" ")}`);
+    console.log(`[Claude] Executing: ${CLAUDE_BIN} ${cliArgs.join(" ")} -- <stdin>`);
     console.log(`[Claude] CWD: ${cwd} | Timeout: ${timeoutMs}ms`);
 
     const proc = spawn(CLAUDE_BIN, cliArgs, {
       cwd,
       env: { ...process.env },
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
     });
+    proc.stdin.write(prompt);
+    proc.stdin.end();
 
     console.log(`[Claude] Process spawned, PID: ${proc.pid}`);
-    activeProcess = proc;
+    activeProcesses.set("default", proc);
 
     let stdout = "";
     let stderr = "";
@@ -504,7 +510,7 @@ function executeClaudeCommand(command, args, context) {
 
     proc.on("close", (code) => {
       clearTimeout(timeout);
-      activeProcess = null;
+      activeProcesses.delete("default");
       const completedAt = Date.now();
       console.log(`[Claude] Process exited with code ${code}`);
 
@@ -545,12 +551,393 @@ function executeClaudeCommand(command, args, context) {
 
     proc.on("error", (err) => {
       clearTimeout(timeout);
-      activeProcess = null;
+      activeProcesses.delete("default");
       console.error(`[Claude] Spawn error: ${err.message}`);
       reject(new Error(`Failed to spawn Claude: ${err.message}`));
     });
   });
 }
+
+// --- Swarm Execution ---
+
+function interpolateTemplate(str, vars) {
+  let result = str;
+  for (const [key, value] of Object.entries(vars)) {
+    if (typeof value !== "string") continue;
+    result = result.replaceAll(`{{${key}}}`, value);
+  }
+  return result;
+}
+
+function executeSwarmCommand(command, args, context) {
+  return new Promise(async (resolve, reject) => {
+    const startedAt = Date.now();
+    const config = loadConfig();
+    const cwd = command.workingDir || RESOURCES_DIR;
+
+    // 1. Run fetch script
+    let fetchScript = interpolateTemplate(command.fetch.script, args);
+    fetchScript = fetchScript.replaceAll("node scripts/", `node ${path.join(cwd, "scripts")}/`);
+
+    sendToRenderer("claude:output-chunk", { type: "swarm-fetch-start" });
+
+    let fetchData;
+    try {
+      const { execFile } = require("child_process");
+      fetchData = await new Promise((res, rej) => {
+        const parts = fetchScript.split(/\s+/);
+        const bin = parts[0];
+        const fetchArgs = parts.slice(1);
+        execFile(bin, fetchArgs, { cwd, timeout: 30000 }, (err, stdout, stderr) => {
+          if (err) return rej(new Error(`Fetch failed: ${stderr || err.message}`));
+          res(stdout);
+        });
+      });
+    } catch (err) {
+      sendToRenderer("claude:output-chunk", { type: "swarm-fetch-error", error: err.message });
+      return reject(err);
+    }
+
+    // 2. Generate session ID and stash for phase 2
+    const swarmSessionId = Date.now().toString(36);
+    swarmSessions.set(swarmSessionId, { fetchData, command, args, context, startedAt });
+
+    // Clean up stale sessions (>30min)
+    for (const [id, session] of swarmSessions) {
+      if (Date.now() - session.startedAt > SWARM_SESSION_TTL) {
+        swarmSessions.delete(id);
+      }
+    }
+
+    // 3. Send summary-start with specialist metadata
+    const specialists = command.specialists
+      .filter((s) => s.enabled !== false)
+      .map((s) => ({ id: s.id, name: s.name, icon: s.icon || "Zap" }));
+
+    sendToRenderer("claude:output-chunk", {
+      type: "swarm-summary-start",
+      swarmSessionId,
+      specialists,
+    });
+
+    // 4. Run summary agent (no --add-dir, no source code tools)
+    const summaryPrompt = interpolateTemplate(command.summary.prompt, { ...args, fetchData });
+    const modelKey = command.model || config.defaultModel || "sonnet";
+    const resolvedModel = MODEL_ALIASES[modelKey] || modelKey;
+
+    const summaryResult = await new Promise((resSum) => {
+      const cliArgs = ["-p", "--output-format", "stream-json", "--verbose"];
+      if (resolvedModel) cliArgs.push("--model", resolvedModel);
+
+      const timeoutMs = command.timeoutMs || DEFAULT_TIMEOUT_MS;
+
+      console.log(`[Swarm] Spawning summary agent (model: ${resolvedModel})`);
+      const proc = spawn(CLAUDE_BIN, cliArgs, {
+        cwd,
+        env: { ...process.env },
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      proc.stdin.write(summaryPrompt);
+      proc.stdin.end();
+
+      console.log(`[Swarm] summary PID: ${proc.pid}`);
+      activeProcesses.set("summary", proc);
+
+      let stdout = "";
+      let lineBuffer = "";
+      const seenMessageIds = new Set();
+
+      const timeout = setTimeout(() => {
+        if (!proc.killed) {
+          proc.kill("SIGTERM");
+          sendToRenderer("claude:output-chunk", {
+            type: "json-event",
+            specialistId: "summary",
+            event: { type: "error", message: `Timed out after ${timeoutMs / 1000}s` },
+          });
+        }
+      }, timeoutMs);
+
+      function processLine(line) {
+        if (!line.trim()) return;
+        try {
+          const event = JSON.parse(line);
+          if (event.type === "system" || event.type === "rate_limit_event") return;
+          if (event.type === "assistant" && event.message?.id) {
+            seenMessageIds.add(event.message.id);
+          }
+          sendToRenderer("claude:output-chunk", {
+            type: "json-event",
+            specialistId: "summary",
+            event,
+          });
+        } catch {
+          sendToRenderer("claude:output-chunk", {
+            type: "stdout",
+            specialistId: "summary",
+            chunk: line + "\n",
+          });
+        }
+      }
+
+      proc.stdout.on("data", (data) => {
+        const text = data.toString();
+        stdout += text;
+        lineBuffer += text;
+        const lines = lineBuffer.split("\n");
+        lineBuffer = lines.pop() || "";
+        for (const line of lines) processLine(line);
+      });
+
+      proc.stderr.on("data", (data) => {
+        sendToRenderer("claude:output-chunk", {
+          type: "stderr",
+          specialistId: "summary",
+          chunk: `[stderr] ${data.toString()}`,
+        });
+      });
+
+      proc.on("close", (code) => {
+        clearTimeout(timeout);
+        activeProcesses.delete("summary");
+        if (lineBuffer.trim()) {
+          processLine(lineBuffer);
+          lineBuffer = "";
+        }
+        console.log(`[Swarm] summary exited with code ${code}`);
+        resSum({ exitCode: code, output: extractCleanOutput(stdout) });
+      });
+
+      proc.on("error", (err) => {
+        clearTimeout(timeout);
+        activeProcesses.delete("summary");
+        console.error(`[Swarm] summary spawn error: ${err.message}`);
+        resSum({ exitCode: 1, output: `Error: ${err.message}` });
+      });
+    });
+
+    // 5. Send summary-complete
+    sendToRenderer("claude:output-chunk", {
+      type: "swarm-summary-complete",
+      swarmSessionId,
+      exitCode: summaryResult.exitCode,
+    });
+
+    // 6. Auto-save summary as its own analysis
+    if (config.autoSaveAnalyses !== false) {
+      try {
+        const metadata = analysisStore.saveAnalysis({
+          commandId: command.id || command.name || "unknown",
+          prompt: `[summary] ${command.name || "swarm"}`,
+          model: resolvedModel,
+          cwd,
+          output: summaryResult.output,
+          exitCode: summaryResult.exitCode,
+          startedAt,
+          completedAt: Date.now(),
+          context: context || null,
+        });
+        sendToRenderer("claude:analysis-saved", metadata);
+      } catch (err) {
+        console.error("[Swarm] Failed to save summary analysis:", err.message);
+      }
+    }
+
+    // Phase 1 complete — renderer will show specialist picker
+    resolve({ output: summaryResult.output, exitCode: summaryResult.exitCode });
+  });
+}
+
+// Spawn selected specialists in parallel (used by phase 2)
+function spawnSpecialists(command, specialists, fetchData, args, config, cwd) {
+  const modelKey = command.model || config.defaultModel || "sonnet";
+
+  const promises = specialists.map((specialist) => {
+    return new Promise((resSpec) => {
+      let prompt = specialist.prompt;
+      prompt = interpolateTemplate(prompt, { ...args, fetchData });
+
+      if (config.workingDir) {
+        prompt += `\n\nThe source code for the agent that generated these traces is available at ${config.workingDir}. When relevant, cross-reference trace data with the agent's source code to provide specific, actionable code recommendations. Reference specific files and line numbers when possible.`;
+      }
+
+      const specModelKey = specialist.model || modelKey;
+      const resolvedModel = MODEL_ALIASES[specModelKey] || specModelKey;
+
+      const cliArgs = ["-p", "--output-format", "stream-json", "--verbose"];
+      if (resolvedModel) cliArgs.push("--model", resolvedModel);
+      if (config.workingDir) cliArgs.push("--add-dir", config.workingDir);
+
+      const allowedTools = [...(command.allowedTools || [])];
+      if (config.workingDir) allowedTools.push("Read", "Grep");
+      for (const tool of allowedTools) cliArgs.push("--allowedTools", tool);
+
+      // Resolve relative script paths to absolute
+      prompt = prompt.replaceAll('node scripts/', `node ${path.join(cwd, 'scripts')}/`);
+
+      const timeoutMs = command.timeoutMs || DEFAULT_TIMEOUT_MS;
+
+      console.log(`[Swarm] Spawning specialist: ${specialist.id} (model: ${resolvedModel})`);
+      const proc = spawn(CLAUDE_BIN, cliArgs, {
+        cwd,
+        env: { ...process.env },
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      proc.stdin.write(prompt);
+      proc.stdin.end();
+
+      console.log(`[Swarm] ${specialist.id} PID: ${proc.pid}`);
+      activeProcesses.set(specialist.id, proc);
+
+      let stdout = "";
+      let lineBuffer = "";
+      const seenMessageIds = new Set();
+
+      const timeout = setTimeout(() => {
+        if (!proc.killed) {
+          proc.kill("SIGTERM");
+          sendToRenderer("claude:output-chunk", {
+            type: "json-event",
+            specialistId: specialist.id,
+            event: { type: "error", message: `Timed out after ${timeoutMs / 1000}s` },
+          });
+        }
+      }, timeoutMs);
+
+      function processLine(line) {
+        if (!line.trim()) return;
+        try {
+          const event = JSON.parse(line);
+          if (event.type === "system" || event.type === "rate_limit_event") return;
+          if (event.type === "assistant" && event.message?.id) {
+            seenMessageIds.add(event.message.id);
+          }
+          sendToRenderer("claude:output-chunk", {
+            type: "json-event",
+            specialistId: specialist.id,
+            event,
+          });
+        } catch {
+          sendToRenderer("claude:output-chunk", {
+            type: "stdout",
+            specialistId: specialist.id,
+            chunk: line + "\n",
+          });
+        }
+      }
+
+      proc.stdout.on("data", (data) => {
+        const text = data.toString();
+        stdout += text;
+        lineBuffer += text;
+        const lines = lineBuffer.split("\n");
+        lineBuffer = lines.pop() || "";
+        for (const line of lines) processLine(line);
+      });
+
+      proc.stderr.on("data", (data) => {
+        sendToRenderer("claude:output-chunk", {
+          type: "stderr",
+          specialistId: specialist.id,
+          chunk: `[stderr] ${data.toString()}`,
+        });
+      });
+
+      proc.on("close", (code) => {
+        clearTimeout(timeout);
+        activeProcesses.delete(specialist.id);
+        if (lineBuffer.trim()) {
+          processLine(lineBuffer);
+          lineBuffer = "";
+        }
+        console.log(`[Swarm] ${specialist.id} exited with code ${code}`);
+        resSpec({
+          specialistId: specialist.id,
+          name: specialist.name,
+          exitCode: code,
+          output: extractCleanOutput(stdout),
+        });
+      });
+
+      proc.on("error", (err) => {
+        clearTimeout(timeout);
+        activeProcesses.delete(specialist.id);
+        console.error(`[Swarm] ${specialist.id} spawn error: ${err.message}`);
+        resSpec({
+          specialistId: specialist.id,
+          name: specialist.name,
+          exitCode: 1,
+          output: `Error: ${err.message}`,
+        });
+      });
+    });
+  });
+
+  return Promise.all(promises);
+}
+
+// Phase 2: Run selected specialists
+ipcMain.handle("claude:run-specialists", async (event, { swarmSessionId, specialistIds }) => {
+  const session = swarmSessions.get(swarmSessionId);
+  if (!session) return { success: false, error: "Session expired" };
+
+  const { fetchData, command, args, context, startedAt } = session;
+  const config = loadConfig();
+  const cwd = command.workingDir || RESOURCES_DIR;
+
+  const selected = command.specialists
+    .filter((s) => s.enabled !== false && specialistIds.includes(s.id));
+
+  const specialists = selected.map((s) => ({ id: s.id, name: s.name, icon: s.icon || "Zap" }));
+
+  sendToRenderer("claude:output-chunk", {
+    type: "swarm-start",
+    specialists,
+  });
+
+  try {
+    const results = await spawnSpecialists(command, selected, fetchData, args, config, cwd);
+
+    sendToRenderer("claude:output-chunk", {
+      type: "swarm-complete",
+      results: results.map((r) => ({ specialistId: r.specialistId, exitCode: r.exitCode })),
+    });
+
+    const combinedOutput = results
+      .map((r) => `## ${r.name}\n\n${r.output}`)
+      .join("\n\n---\n\n");
+
+    // Auto-save combined specialist output
+    if (config.autoSaveAnalyses !== false) {
+      try {
+        const modelKey = command.model || config.defaultModel || "sonnet";
+        const modelResolved = MODEL_ALIASES[modelKey] || modelKey;
+        const metadata = analysisStore.saveAnalysis({
+          commandId: command.id || command.name || "unknown",
+          prompt: `[swarm] ${specialists.map((s) => s.name).join(", ")}`,
+          model: modelResolved,
+          cwd,
+          output: combinedOutput,
+          exitCode: results.every((r) => r.exitCode === 0) ? 0 : 1,
+          startedAt,
+          completedAt: Date.now(),
+          context: context || null,
+        });
+        sendToRenderer("claude:analysis-saved", metadata);
+      } catch (err) {
+        console.error("[Swarm] Failed to save specialist analysis:", err.message);
+      }
+    }
+
+    // Clean up session
+    swarmSessions.delete(swarmSessionId);
+
+    return { success: true, output: combinedOutput, exitCode: results.every((r) => r.exitCode === 0) ? 0 : 1 };
+  } catch (err) {
+    swarmSessions.delete(swarmSessionId);
+    return { success: false, error: err.message };
+  }
+});
 
 // Helper — send IPC to renderer safely
 function sendToRenderer(channel, data) {

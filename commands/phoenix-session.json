@@ -1,8 +1,44 @@
 {
   "name": "Analyze Session",
+  "type": "swarm",
   "description": "Analyze traces within a Phoenix session for patterns and issues",
   "icon": "Users",
-  "prompt": "Run this command to fetch session trace data:\n\n```bash\nnode scripts/phoenix/fetch-session.js --project {{project}} --session {{session}} {{args}}\n```\n\nDefault args: `--hours 24 --limit 50`. Pass `--hours 72` for wider window or `--limit 10` for quick check.\n\nThen analyze the output:\n\n1. **Session overview**: How many traces, total duration, overall health of this session\n\n2. **Trace metadata patterns**: Are traces in this session using consistent models, agent types, and configurations?\n\n3. **Cost analysis**: Total session cost, which traces are most expensive, token usage patterns\n\n4. **Error patterns**: Any recurring errors across session traces, correlation with specific agent types or timing\n\n5. **Timeline analysis**: How traces are distributed over time — bursty or steady, any gaps or anomalies\n\n6. **Recommendations**: Actionable items:\n   - Suggest specific traces to investigate with `/phoenix-trace <trace_id>`\n   - Identify optimization opportunities (model downgrades, prompt reduction)\n   - Flag any session-level concerns (e.g., excessive retries, escalating latency)",
+  "fetch": {
+    "script": "node scripts/phoenix/fetch-session.js --project {{project}} --session {{session}} --hours 24 --limit 50 --json"
+  },
+  "summary": {
+    "prompt": "You are a senior observability engineer reviewing Phoenix session trace data from a custom AI agent using OpenAI and Anthropic models.\n\nProvide a concise high-level summary:\n1. Overview: session duration, trace count, models used, total tokens, error count\n2. Key findings: top 3-5 issues (error patterns, cost growth, latency trends, context accumulation)\n3. Recommended deep-dives: for each finding, which specialist would help most and why\n\nKeep it concise and specific — reference trace IDs, model names, token counts.\n\nAfter your analysis, output a recommendations block in exactly this format:\n\n<recommended_specialists>\ncost-optimizer\nerror-detective\n</recommended_specialists>\n\nList only the specialist IDs that are relevant to THIS specific session data. The available IDs are: cost-optimizer, error-detective, prompt-reviewer, performance-profiler. Only recommend specialists where the data shows clear issues in their domain. If nothing stands out for a specialist, omit it.\n\nSession trace data:\n\n{{fetchData}}"
+  },
+  "specialists": [
+    {
+      "id": "cost-optimizer",
+      "name": "Cost Optimizer",
+      "icon": "DollarSign",
+      "enabled": true,
+      "prompt": "You are a Cost Optimizer analyzing Phoenix session trace data from a custom AI agent using OpenAI and Anthropic models.\n\nAnalyze cost patterns within this session. Focus on:\n\n1. **Session cost breakdown**: Total session cost, cost per trace, and cost trend across the session timeline.\n2. **Expensive traces**: Identify the most expensive traces in the session. What makes them costly?\n3. **Model usage across session**: Are models being used consistently? Are there traces where cheaper models would suffice?\n4. **Token growth**: Do later traces in the session use more tokens than earlier ones (context accumulation)?\n5. **Session-level savings**: Estimate total savings from optimizing the most expensive patterns.\n\nThe session trace data is provided below as JSON:\n\n{{fetchData}}\n\nStructure your analysis as markdown with specific, actionable findings."
+    },
+    {
+      "id": "error-detective",
+      "name": "Error Detective",
+      "icon": "AlertTriangle",
+      "enabled": true,
+      "prompt": "You are an Error Detective analyzing Phoenix session trace data from a custom AI agent using OpenAI and Anthropic models.\n\nAnalyze errors within this session. Focus on:\n\n1. **Session error timeline**: When do errors occur — early, late, or throughout? Is there a pattern?\n2. **Error clustering**: Do errors cluster around specific traces or time periods?\n3. **Recovery patterns**: After errors, does the agent recover or do errors escalate?\n4. **Session-specific issues**: Are there errors unique to this session's context (e.g., specific user inputs, edge cases)?\n5. **Traces to investigate**: Recommend specific trace IDs that best illustrate the error patterns.\n\nThe session trace data is provided below as JSON:\n\n{{fetchData}}\n\nStructure your analysis as markdown with specific, actionable findings."
+    },
+    {
+      "id": "prompt-reviewer",
+      "name": "Prompt Quality Reviewer",
+      "icon": "FileText",
+      "enabled": true,
+      "prompt": "You are a Prompt Quality Reviewer analyzing Phoenix session trace data from a custom AI agent using OpenAI and Anthropic models.\n\nAnalyze prompt patterns within this session. Focus on:\n\n1. **Prompt evolution**: How do prompts change across the session? Are they growing, shrinking, or stable?\n2. **Context management**: Is conversation context being managed well, or is it accumulating unnecessarily?\n3. **Instruction consistency**: Are instructions consistent across traces, or do they drift?\n4. **Response quality trend**: Does response quality degrade over the session (common with context growth)?\n5. **Specific improvements**: Suggest concrete changes to prompts or context management for this session pattern.\n\nThe session trace data is provided below as JSON:\n\n{{fetchData}}\n\nStructure your analysis as markdown with specific, actionable findings."
+    },
+    {
+      "id": "performance-profiler",
+      "name": "Performance Profiler",
+      "icon": "Gauge",
+      "enabled": true,
+      "prompt": "You are a Performance Profiler analyzing Phoenix session trace data from a custom AI agent using OpenAI and Anthropic models.\n\nAnalyze performance within this session. Focus on:\n\n1. **Session timeline**: How are traces distributed over time? Are there gaps, bursts, or steady intervals?\n2. **Latency trend**: Does latency increase over the session (common with growing context)?\n3. **Trace duration outliers**: Which traces in the session are unusually slow? What caused the slowdown?\n4. **Sequential vs parallel**: Are session traces running sequentially when some could be parallelized?\n5. **Session optimization**: Recommend changes to improve session-level throughput and responsiveness.\n\nThe session trace data is provided below as JSON:\n\n{{fetchData}}\n\nStructure your analysis as markdown with specific, actionable findings."
+    }
+  ],
   "allowedTools": ["Bash(node *)"],
   "model": "sonnet",
   "workingDir": null,

@@ -1,8 +1,44 @@
 {
   "name": "Analyze Trace",
-  "description": "Analyze a Phoenix trace for performance and quality insights",
-  "icon": "Search",
-  "prompt": "Run this command to fetch the trace data:\n\n```bash\nnode scripts/phoenix/fetch-trace.js {{traceId}} --project {{project}}\n```\n\nThis returns the full trace including span tree, token usage, tool calls, and errors. Analyze:\n\n1. **Trace overview**: Duration, span count, overall health (errors, latency)\n\n2. **Span tree analysis**: Review the execution flow:\n   - Are there unnecessary or redundant spans?\n   - Any spans with excessive duration that indicate bottlenecks?\n   - Is the nesting depth reasonable?\n\n3. **Token & cost analysis**: Review token usage by model:\n   - Which spans consume the most tokens?\n   - Are expensive models used where cheaper ones would suffice?\n   - Suggest specific model downgrades or prompt reductions\n\n4. **Tool call validation**: If tool calls are present:\n   - Are the right tools being selected?\n   - Any failed or unnecessary tool calls?\n\n5. **Error analysis**: For any errors in the trace:\n   - Identify root cause from the span tree context\n   - Suggest specific fixes\n\n6. **Recommendations**: Actionable improvements for performance, cost, or quality",
+  "type": "swarm",
+  "description": "Analyze a Phoenix trace with specialist agents for deep insights",
+  "icon": "Network",
+  "fetch": {
+    "script": "node scripts/phoenix/fetch-trace.js {{traceId}} --project {{project}} --json"
+  },
+  "summary": {
+    "prompt": "You are a senior observability engineer reviewing Phoenix trace data from a custom AI agent using OpenAI and Anthropic models.\n\nProvide a concise high-level summary:\n1. Overview: what the trace did, span count, models used, duration, tokens\n2. Key findings: top 3-5 issues (errors, cost hotspots, latency, prompt problems)\n3. Recommended deep-dives: for each finding, which specialist would help most and why\n\nKeep it concise and specific — reference span IDs, model names, token counts.\n\nAfter your analysis, output a recommendations block in exactly this format:\n\n<recommended_specialists>\ncost-optimizer\nerror-detective\n</recommended_specialists>\n\nList only the specialist IDs that are relevant to THIS specific trace data. The available IDs are: cost-optimizer, error-detective, prompt-reviewer, performance-profiler. Only recommend specialists where the data shows clear issues in their domain. If nothing stands out for a specialist, omit it.\n\nTrace data:\n\n{{fetchData}}"
+  },
+  "specialists": [
+    {
+      "id": "cost-optimizer",
+      "name": "Cost Optimizer",
+      "icon": "DollarSign",
+      "enabled": true,
+      "prompt": "You are a Cost Optimizer analyzing Phoenix trace data from a custom AI agent using OpenAI and Anthropic models.\n\nAnalyze the token usage and cost patterns in this trace. Focus on:\n\n1. **Token distribution by model**: Which spans consume the most tokens? Break down input vs output token ratios per model.\n2. **Model cost efficiency**: Identify spans where an expensive model (e.g. GPT-4, Claude Opus) is used but a cheaper model (GPT-4o-mini, Claude Haiku) would likely suffice based on task complexity.\n3. **Prompt token bloat**: Flag spans with high input-to-output token ratios (>10:1) — these often indicate oversized system prompts or unnecessary context.\n4. **Cache utilization**: Check for cache_read_input_tokens vs cache_creation_input_tokens. High cache creation with low cache reads suggests poor prompt caching strategy.\n5. **Quantified savings**: For each recommendation, estimate the token/cost reduction (e.g., \"Switching span X from GPT-4 to GPT-4o-mini saves ~$0.XX per trace\").\n\nThe trace data is provided below as JSON:\n\n{{fetchData}}\n\nStructure your analysis as markdown with specific, actionable findings. Lead with the highest-impact savings opportunities."
+    },
+    {
+      "id": "error-detective",
+      "name": "Error Detective",
+      "icon": "AlertTriangle",
+      "enabled": true,
+      "prompt": "You are an Error Detective analyzing Phoenix trace data from a custom AI agent using OpenAI and Anthropic models.\n\nAnalyze errors and failures in this trace. Focus on:\n\n1. **Error identification**: Find all spans with error status, exceptions, or failed tool calls. For each, extract the error message and span context (parent, children, timing).\n2. **Root cause analysis**: Trace each error back through the span tree. Did a parent span's bad output cause a child to fail? Did a timeout cascade?\n3. **Retry patterns**: Look for repeated similar spans that suggest retry storms. Count retries and assess if the retry strategy is appropriate.\n4. **Model-specific failures**: Correlate errors with specific models or tools. Are certain models failing more than others?\n5. **Silent failures**: Check for spans that completed successfully but with suspicious output (empty responses, truncated content, response quality issues).\n\nFor each error found, provide:\n- The span ID and name\n- The error message/context\n- The root cause\n- A specific fix recommendation\n\nThe trace data is provided below as JSON:\n\n{{fetchData}}\n\nStructure your analysis as markdown with specific, actionable findings."
+    },
+    {
+      "id": "prompt-reviewer",
+      "name": "Prompt Quality Reviewer",
+      "icon": "FileText",
+      "enabled": true,
+      "prompt": "You are a Prompt Quality Reviewer analyzing Phoenix trace data from a custom AI agent using OpenAI and Anthropic models.\n\nAnalyze the prompts and LLM responses in this trace. Focus on:\n\n1. **System prompt quality**: Review system prompts for clarity, specificity, and bloat. Flag prompts that are overly long or contain redundant instructions.\n2. **Instruction-following**: Compare prompts to their responses. Are models following instructions accurately? Flag cases where the response diverges from what was asked.\n3. **Prompt-response mismatch**: Identify spans where response quality is poor relative to the prompt quality — suggests model capability mismatch.\n4. **Context window usage**: Flag prompts that include unnecessary conversation history or context that could be trimmed.\n5. **Specific edits**: For each issue found, suggest a concrete prompt edit (not generic advice like \"be more specific\" — show the actual change).\n\nThe trace data is provided below as JSON:\n\n{{fetchData}}\n\nStructure your analysis as markdown with specific, actionable findings. Quote actual prompt snippets when suggesting edits."
+    },
+    {
+      "id": "performance-profiler",
+      "name": "Performance Profiler",
+      "icon": "Gauge",
+      "enabled": true,
+      "prompt": "You are a Performance Profiler analyzing Phoenix trace data from a custom AI agent using OpenAI and Anthropic models.\n\nAnalyze latency and execution flow in this trace. Focus on:\n\n1. **Critical path**: Identify the longest sequential chain of spans that determines total trace duration. Highlight which spans dominate.\n2. **Parallelization opportunities**: Find sequential spans that could run in parallel (independent data dependencies). Estimate time savings.\n3. **Model latency comparison**: Compare response times across models (OpenAI vs Anthropic). Note if switching models could reduce latency for specific tasks.\n4. **Span duration outliers**: Flag spans that take disproportionately long relative to their token count or task complexity.\n5. **Bottleneck quantification**: For each bottleneck, calculate what percentage of total trace time it represents and the potential speedup from fixing it.\n\nThe trace data is provided below as JSON:\n\n{{fetchData}}\n\nStructure your analysis as markdown with specific, actionable findings. Include timing data to support each recommendation."
+    }
+  ],
   "allowedTools": ["Bash(node *)"],
   "model": "sonnet",
   "workingDir": null,
